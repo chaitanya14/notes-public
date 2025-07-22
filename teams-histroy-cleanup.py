@@ -1,45 +1,47 @@
 import re
 import emoji
 
-def clean_teams_chat_with_code_blocks(input_text):
+def clean_teams_channel_chat(input_text: str) -> str:
     cleaned_lines = []
     lines = input_text.split('\n')
     in_code_block = False
 
     for line in lines:
+        original_line = line
         line = line.strip()
 
-        # Skip empty lines and UI junk
-        if not line or line.lower() in ['reply', '1 like reaction.', '👍'] or 'Open' in line:
+        # Skip empty lines
+        if not line:
             continue
 
-        # Toggle code block mode
-        if '{' in line and '}' not in line:
-            in_code_block = True
+        # Skip Teams UI garbage
+        if any([
+            re.match(r'^\d+ Like reaction(s)?\.?$', line, re.IGNORECASE),
+            re.match(r'^Reply$', line, re.IGNORECASE),
+            re.match(r'^See more$', line, re.IGNORECASE),
+            re.match(r'^Open \d+ repl(y|ies) from', line, re.IGNORECASE),
+            re.match(r'^CC\b.*', line, re.IGNORECASE),
+            emoji.replace_emoji(line, replace='').strip() == ''
+        ]):
+            continue
 
-        # Remove emojis
-        line = emoji.replace_emoji(line, replace='')
-
-        # Remove names and timestamps like "Johnson, Jeff M\nFriday 8:22 AM"
-        if re.match(r'^[A-Za-z ,]+$', line):
+        # Skip lines that are likely just a name or timestamp
+        if re.match(r'^[A-Za-z ,.\'-]+$', line):
             continue
         if re.match(r'^\w+day \d{1,2}:\d{2} [APMapm]{2}$', line):
             continue
 
-        # Keep code block content
-        if in_code_block:
-            cleaned_lines.append(line)
-            if '}' in line:
-                in_code_block = False
-            continue
+        # Handle code block start
+        if '{' in line and not in_code_block:
+            in_code_block = True
+
+        # Remove emojis from the message
+        line = emoji.replace_emoji(line, replace='')
 
         cleaned_lines.append(line)
 
-    return '\n'.join(cleaned_lines)
+        # Handle code block end
+        if '}' in line and in_code_block:
+            in_code_block = False
 
-# Example: run this on your pasted file content
-# with open("teams_chat.txt", "r") as f:
-#     raw = f.read()
-# clean = clean_teams_chat_with_code_blocks(raw)
-# with open("cleaned_output.txt", "w") as f:
-#     f.write(clean)
+    return '\n'.join(cleaned_lines)
