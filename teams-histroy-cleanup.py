@@ -1,44 +1,45 @@
 import re
 import emoji
 
-def clean_teams_chat_file_scrub_names(input_file_path, output_file_path):
-    with open(input_file_path, 'r', encoding='utf-8') as f:
-        chat_text = f.read()
-
-    cleaned_messages = []
-    lines = chat_text.split('\n')
-
-    # Matches: [9:05 AM] John Smith: Message
-    full_line_pattern = re.compile(r'^\[\d{1,2}:\d{2} [APMapm]{2}\] [^:]+: (.*)$')
+def clean_teams_chat_with_code_blocks(input_text):
+    cleaned_lines = []
+    lines = input_text.split('\n')
+    in_code_block = False
 
     for line in lines:
         line = line.strip()
-        if not line:
+
+        # Skip empty lines and UI junk
+        if not line or line.lower() in ['reply', '1 like reaction.', '👍'] or 'Open' in line:
             continue
 
-        match = full_line_pattern.match(line)
-        if match:
-            message = match.group(1).strip()
-        else:
-            message = line  # Possibly a continuation or unstructured line
+        # Toggle code block mode
+        if '{' in line and '}' not in line:
+            in_code_block = True
 
         # Remove emojis
-        message = emoji.replace_emoji(message, replace='')
+        line = emoji.replace_emoji(line, replace='')
 
-        # Remove leading dashes, bullets, or extra formatting artifacts
-        message = re.sub(r'^[-•\*\s]+', '', message)
+        # Remove names and timestamps like "Johnson, Jeff M\nFriday 8:22 AM"
+        if re.match(r'^[A-Za-z ,]+$', line):
+            continue
+        if re.match(r'^\w+day \d{1,2}:\d{2} [APMapm]{2}$', line):
+            continue
 
-        # Skip empty lines after cleaning
-        if message:
-            cleaned_messages.append(message)
+        # Keep code block content
+        if in_code_block:
+            cleaned_lines.append(line)
+            if '}' in line:
+                in_code_block = False
+            continue
 
-    with open(output_file_path, 'w', encoding='utf-8') as f:
-        f.write('\n'.join(cleaned_messages))
+        cleaned_lines.append(line)
 
-    print(f"✅ Cleaned and anonymized chat saved to: {output_file_path}")
+    return '\n'.join(cleaned_lines)
 
-# Example usage
-input_path = "teams_chat_history.txt"
-output_path = "cleaned_chat.txt"
-
-clean_teams_chat_file_scrub_names(input_path, output_path)
+# Example: run this on your pasted file content
+# with open("teams_chat.txt", "r") as f:
+#     raw = f.read()
+# clean = clean_teams_chat_with_code_blocks(raw)
+# with open("cleaned_output.txt", "w") as f:
+#     f.write(clean)
