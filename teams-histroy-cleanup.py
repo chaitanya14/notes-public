@@ -1,34 +1,31 @@
 import re
 import emoji
 
-def clean_teams_channel_chat(input_text: str) -> str:
+def clean_teams_chat_fully_scrubbed(input_text: str) -> str:
     cleaned_lines = []
     lines = input_text.split('\n')
     in_code_block = False
 
+    # Match lines like: Friday 8:22 AM or Monday 11:45 PM
+    day_time_pattern = re.compile(r'^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+\d{1,2}:\d{2}\s+[APMapm]{2}$', re.IGNORECASE)
+
     for line in lines:
-        original_line = line
         line = line.strip()
 
-        # Skip empty lines
-        if not line:
+        # Skip empty lines or emoji-only lines
+        if not line or emoji.replace_emoji(line, replace='').strip() == '':
             continue
 
-        # Skip Teams UI garbage
+        # Skip junk metadata
         if any([
             re.match(r'^\d+ Like reaction(s)?\.?$', line, re.IGNORECASE),
             re.match(r'^Reply$', line, re.IGNORECASE),
             re.match(r'^See more$', line, re.IGNORECASE),
             re.match(r'^Open \d+ repl(y|ies) from', line, re.IGNORECASE),
             re.match(r'^CC\b.*', line, re.IGNORECASE),
-            emoji.replace_emoji(line, replace='').strip() == ''
+            re.match(r'^[A-Za-z ,.\'-]+$', line),  # Likely a name line like "Johnson, Jeff M"
+            day_time_pattern.match(line)           # Skip lines like "Friday 8:12 AM"
         ]):
-            continue
-
-        # Skip lines that are likely just a name or timestamp
-        if re.match(r'^[A-Za-z ,.\'-]+$', line):
-            continue
-        if re.match(r'^\w+day \d{1,2}:\d{2} [APMapm]{2}$', line):
             continue
 
         # Handle code block start
