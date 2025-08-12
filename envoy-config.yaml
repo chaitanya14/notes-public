@@ -1,0 +1,110 @@
+static_resources:
+  listeners:
+  - name: listener_0
+    address:
+      socket_address:
+        address: 0.0.0.0
+        port_value: 10000
+    filter_chains:
+    - filters:
+      - name: envoy.filters.network.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          stat_prefix: ingress_http
+          route_config:
+            name: local_route
+            virtual_hosts:
+            - name: backend
+              domains: ["*"]
+              routes:
+              - match: { prefix: "/" }
+                route: { cluster: service_backend }
+          http_filters:
+          - name: envoy.filters.http.router
+          access_log:
+          - name: envoy.access_loggers.http
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.access_loggers.http.v3.HttpAccessLog
+              common_config:
+                log_name: envoy_to_splunk
+                # server_uri must be the full https URI (host:port optional)
+                http_service:
+                  server_uri:
+                    uri: "https://splunk-hec.example.com:8088/services/collector"
+                    cluster: splunk_hec
+                    timeout: 5s
+                  # Add the HEC token and correct content-type
+                  request_headers_to_add:
+                  - header:
+                      key: "Authorization"
+                      value: "Splunk YOUR-HEC-TOKEN"
+                  - header:
+                      key: "Content-Type"
+                      value: "application/json"
+              # Build a Splunk HEC-compatible JSON envelope
+              json_format:
+                event:
+                  method: "%REQ(:METHOD)%"
+                  path: "%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%"
+                  protocol: "%PROTOCOL%"
+                  status: "%RESPONSE_CODE%"
+                  bytes_sent: "%BYTES_SENT%"
+                  duration_ms: "%DURATION%"
+                  upstream_host: "%UPSTREAM_HOST%"
+                host: "envoy-proxy-01"
+                sourcetype: "_json"
+
+  clusters:
+  - name: service_backend
+    connect_timeout: 1s
+    type: STRICT_DNS
+    lb_policy: ROUND_ROBIN
+    load_assignment:
+      cluster_name: service_backend
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: backend
+                port_value: 8080
+
+  - name: splunk_hec
+    connect_timeout: 5s
+    type: STRICT_DNS
+    lb_policy: ROUND_ROBIN
+    load_assignment:
+      cluster_name: splunk_hec
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: splunk-hec.example.com
+                port_value: 8088
+
+    # TLS: validate Splunk server cert (use your CA bundle path in filename)
+    transport_socket:
+      name: envoy.transport_sockets.tls
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+        sni: "splunk-hec.example.com"
+        common_tls_context:
+          validation_context:
+            trusted_ca:
+              filename: "/etc/ssl/certs/ca-bundle.crt"
+
+    # Basic outlier detection + circuit breaker (reduce noisy retries)
+    outlier_detection:
+      consecutive_5xx: 5
+      interval: 10s
+      base_ejection_time: 60s
+      max_ejection_percent: 50
+
+    circuit_breakers:
+      thresholds:
+      - priority: DEFAULT
+        max_connections: 100
+        max_pending_requests: 100
+        max_requests: 1000
+        max_retries: 3
